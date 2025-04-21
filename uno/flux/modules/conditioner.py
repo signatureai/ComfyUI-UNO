@@ -51,3 +51,62 @@ class HFEmbedder(nn.Module):
             output_hidden_states=False,
         )
         return outputs[self.output_key]
+
+
+
+class UNOT5Tokenizer(nn.Module):
+    def __init__(self, path: str, max_length: int):
+        super().__init__()
+        self.max_length = max_length
+        self.output_key = "pooler_output" if self.is_clip else "last_hidden_state"
+        self.tokenizer: T5Tokenizer = T5Tokenizer(path, max_length=max_length)
+        self.hf_module: T5EncoderModel = T5EncoderModel(path, max_length=max_length)
+
+        self.hf_module = self.hf_module.eval().requires_grad_(False)
+
+    def forward(self, text: list[str]) -> Tensor:
+        batch_encoding = self.tokenizer(
+            text,
+            truncation=True,
+            max_length=self.max_length,
+            return_length=False,
+            return_overflowing_tokens=False,
+            padding="max_length",
+            return_tensors="pt",
+        )
+
+        outputs = self.hf_module(
+            input_ids=batch_encoding["input_ids"].to(self.hf_module.device),
+            attention_mask=None,
+            output_hidden_states=False,
+        )
+        return outputs[self.output_key]
+
+
+class UNOCLIPTokenizer(nn.Module):
+    def __init__(self, path: str, max_length: int):
+        super().__init__()
+        self.max_length = max_length
+        self.output_key = "pooler_output" if self.is_clip else "last_hidden_state"
+        self.tokenizer: CLIPTokenizer = CLIPTokenizer(path, max_length=max_length)
+        self.hf_module: CLIPTextModel = CLIPTextModel(path, max_length=max_length)
+
+        self.hf_module = self.hf_module.eval().requires_grad_(False)
+
+    def forward(self, text: list[str]) -> Tensor:
+        batch_encoding = self.tokenizer(
+            text,
+            truncation=True,
+            max_length=self.max_length,
+            return_length=False,
+            return_overflowing_tokens=False,
+            padding="max_length",
+            return_tensors="pt",
+        )
+
+        outputs = self.hf_module(
+            input_ids=batch_encoding["input_ids"].to(self.hf_module.device),
+            attention_mask=None,
+            output_hidden_states=False,
+        )
+        return outputs[self.output_key]
