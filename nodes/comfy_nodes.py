@@ -12,7 +12,7 @@ from comfy.model_management import get_torch_device
 import folder_paths
 
 from uno.flux.model import Flux
-from uno.flux.modules.conditioner import HFEmbedder
+from uno.flux.modules.conditioner import UNOT5Tokenizer, UNOCLIPTokenizer
 from uno.flux.pipeline import UNOPipeline, preprocess_ref
 from uno.flux.util import configs, print_load_warning, set_lora
 from uno.flux.modules.layers import DoubleStreamBlockLoraProcessor, SingleStreamBlockLoraProcessor, DoubleStreamBlockProcessor, SingleStreamBlockProcessor
@@ -107,16 +107,6 @@ def custom_load_ae(ae_path, device):
         ae = ae.to(str(device))
     return ae
 
-def custom_load_t5(device: str | torch.device = "cuda", max_length: int = 512) -> HFEmbedder:
-    # max length 64, 128, 256 and 512 should work (if your sequence is short enough)
-    version = "xlabs-ai/xflux_text_encoders"
-    cache_dir = folder_paths.get_folder_paths("clip")[0]
-    return HFEmbedder(version, max_length=max_length, torch_dtype=torch.bfloat16, cache_dir=cache_dir).to(device)
-
-def custom_load_clip(device: str | torch.device = "cuda") -> HFEmbedder:
-    version = "openai/clip-vit-large-patch14"
-    cache_dir = folder_paths.get_folder_paths("clip")[0]
-    return HFEmbedder(version, max_length=77, torch_dtype=torch.bfloat16, cache_dir=cache_dir).to(device)
 
 
 
@@ -131,6 +121,8 @@ class UNOModelLoader:
         # 获取 unet 模型列表和 vae 模型列表
         model_paths = folder_paths.get_filename_list("unet")
         vae_paths = folder_paths.get_filename_list("vae")
+        xlabs_ai_t5_paths =folder_paths.get_folder_paths("clip")
+        openai_clip_paths = folder_paths.get_folder_paths("clip")
         
         # 增加 LoRA 模型选项
         lora_paths = folder_paths.get_filename_list("loras")
@@ -139,6 +131,8 @@ class UNOModelLoader:
             "required": {
                 "flux_model": (model_paths, ),
                 "ae_model": (vae_paths, ),
+                "xlabs_ai_t5": (xlabs_ai_t5_paths, ),
+                "openai_clip": (openai_clip_paths, ),
                 "use_fp8": ("BOOLEAN", {"default": False}),
                 "offload": ("BOOLEAN", {"default": False}),
                 "lora_model": (["None"] + lora_paths, ),
@@ -150,13 +144,15 @@ class UNOModelLoader:
     FUNCTION = "load_model"
     CATEGORY = "UNO"
 
-    def load_model(self, flux_model, ae_model, use_fp8, offload, lora_model=None):
+    def load_model(self, flux_model, ae_model, xlabs_ai_t5, openai_clip, use_fp8, offload, lora_model=None):
         device = get_torch_device()
         
         try:
             # 获取模型文件的完整路径
             flux_model_path = folder_paths.get_full_path("unet", flux_model)
             ae_model_path = folder_paths.get_full_path("vae", ae_model)
+            xlabs_ai_t5_path = folder_paths.get_full_path("clip", xlabs_ai_t5)
+            openai_clip_path = folder_paths.get_full_path("clip", openai_clip)
             
             # 获取LoRA模型路径（如果有）
             lora_model_path = None
@@ -178,8 +174,8 @@ class UNOModelLoader:
                     self.model_type = "flux-dev-fp8" if use_fp8 else "flux-dev"
                     self.use_fp8 = use_fp8
                     # 加载 CLIP 和 T5 编码器
-                    self.clip = custom_load_clip(device="cpu" if offload else self.device)
-                    self.t5 = custom_load_t5(device="cpu" if offload else self.device, max_length=512)
+                    self.clip = UNOCLIPTokenizer(openai_clip_path, 512)
+                    self.t5 = UNOT5Tokenizer(xlabs_ai_t5_path, 512)
                     
                     # 加载自定义模型
                     self.ae = custom_load_ae(ae_path, device="cpu" if offload else self.device)
